@@ -5,6 +5,7 @@ from functools import wraps
 
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 import numpy as np
+from scipy.stats import binned_statistic_2d
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
@@ -56,12 +57,7 @@ class Model(object):
         """
         self.rng = np.random.default_rng(seed=0)
 
-        self.num_samples = 1000  # number of samples to draw from training set
-
-        kernel = 1*RBF(length_scale=0.2) + 1*RBF(length_scale=1) + \
-            1*WhiteKernel(noise_level=0.0001, noise_level_bounds=(1e-5, 1e-3))
-        self.model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5)
-        print(f"Initial Kernel: {kernel}")
+        self.num_samples = 5000  # number of samples to draw from training set
 
     @timefunc
     def predict(self, x: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -88,7 +84,14 @@ class Model(object):
         :param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
         """
 
-        # subsample of training set
+        kernel = 1 * RBF(length_scale=0.2, length_scale_bounds=(0.05, 20)) + \
+                      1 * RBF(length_scale=0.02, length_scale_bounds=(1e-4, 1)) + \
+                      1 * WhiteKernel(noise_level=0.00001, noise_level_bounds=(1e-7, 1e-4))
+
+        self.model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5, normalize_y=True)
+        print(f"Initial Kernel: {kernel}")
+
+        # get even subsample of training
         idx = np.random.choice(len(train_y), self.num_samples, replace=False)
         train_x_s = train_x[idx]
         train_y_s = train_y[idx]
@@ -193,6 +196,10 @@ def main():
     train_y = np.loadtxt('train_y.csv', delimiter=',', skiprows=1)
     test_x = np.loadtxt('test_x.csv', delimiter=',', skiprows=1)
 
+    #plt.hexbin(train_x[:, 0], train_x[:, 1], marginals=True)
+    #plt.colorbar()
+    #plt.show()
+    #return
     # Fit the model
     print('Fitting model')
     model = Model()

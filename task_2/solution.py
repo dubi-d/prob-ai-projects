@@ -45,7 +45,6 @@ def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.cur
     # IMPORTANT: return your model here!
     return model
 
-
 class Model(object):
     """
     Task 2 model that can be used to train a BNN using Bayes by backprop and create predictions.
@@ -116,8 +115,22 @@ class Model(object):
                 else:
                     # BayesNet training step via Bayes by backprop
                     assert isinstance(self.network, BayesNet)
-
+                                        
                     # TODO: Implement Bayes by backprop training here
+                    
+                    
+                    # Perform forward pass
+                    current_logits = self.network.forward(batch_x)
+
+                    # Calculate the loss
+                    # We use the negative log likelihood as the loss
+                    # Combining nll_loss with a log_softmax is better for numeric stability
+                    loss = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
+
+                    # Backpropagate to get the gradients
+                    loss.backward()
+                    loss = loss + 0.1*model.kl_loss()/num_batches
+                    loss.backward()
 
                 self.optimizer.step()
 
@@ -153,8 +166,12 @@ class Model(object):
         assert output.ndim == 2 and output.shape[1] == 10
         assert np.allclose(np.sum(output, axis=1), 1.0)
         return output
+<<<<<<< Updated upstream
 
 
+=======
+    
+>>>>>>> Stashed changes
 class BayesianLayer(nn.Module):
     """
     Module implementing a single Bayesian feedforward layer.
@@ -201,7 +218,14 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
+<<<<<<< Updated upstream
             self.bias_var_posterior = None
+=======
+            self.bias_var_posterior = MultivariateDiagonalGaussian(
+            torch.nn.Parameter(torch.zeros((out_features))),
+            torch.nn.Parameter(torch.ones((out_features)))
+            )
+>>>>>>> Stashed changes
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
         else:
@@ -223,6 +247,7 @@ class BayesianLayer(nn.Module):
         # TODO: Perform a forward pass as described in this method's docstring.
         #  Make sure to check whether `self.use_bias` is True,
         #  and if yes, include the bias as well.
+<<<<<<< Updated upstream
         log_prior = torch.tensor(0.0)
         log_variational_posterior = torch.tensor(0.0)
         weights = None
@@ -231,6 +256,23 @@ class BayesianLayer(nn.Module):
         return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
 
 
+=======
+        
+        #log_prior = torch.tensor(0.0)
+        #log_prior = self.prior.log_prob(weights)
+        #log_variational_posterior = torch.tensor(0.0)
+        
+        
+        weights = self.weights_var_posterior.sample()
+        log_prior = self.prior.log_prob(weights)
+        log_variational_posterior = self.weights_var_posterior.log_prob(weights)
+        
+        if self.use_bias:
+            bias = self.bias_var_posterior.sample()
+        else: 
+            bias = None
+        return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
+>>>>>>> Stashed changes
 class BayesNet(nn.Module):
     """
     Module implementing a Bayesian feedforward neural network using BayesianLayer objects.
@@ -263,17 +305,40 @@ class BayesNet(nn.Module):
 
         :param x: Input features, float tensor of shape (batch_size, in_features)
         :return: 3-tuple containing
-            i) output features using stochastic weights from the variational posterior,
-            ii) sample of the log-prior probability, and
+            i)   output features using stochastic weights from the variational posterior,
+            ii)  sample of the log-prior probability, and
             iii) sample of the log-variational-posterior probability
         """
 
+        
+        
+        
         # TODO: Perform a full pass through your BayesNet as described in this method's docstring.
         #  You can look at DenseNet to get an idea how a forward pass might look like.
         #  Don't forget to apply your activation function in between BayesianLayers!
-        log_prior = torch.tensor(0.0)
-        log_variational_posterior = torch.tensor(0.0)
-        output_features = None
+        
+        
+        current_features = x
+        log_prior = []
+        log_variational_posterior = []
+
+
+        for idx, current_layer in enumerate(self.layers):
+            new_features,lp,lvp = current_layer.forward(current_features)
+            if idx < len(self.layers) - 1:
+                new_features = self.activation(new_features)
+            log_prior.append(lp)
+            log_variational_posterior.append(lvp)
+            current_features = new_features
+        
+        log_prior=sum(log_prior)
+        log_variational_posterior=sum(log_variational_posterior)
+        output_features = current_features
+
+        
+        #log_prior = torch.tensor(0.0)
+        #log_variational_posterior = torch.tensor(0.0)
+        #output_features = None
 
         return output_features, log_prior, log_variational_posterior
 

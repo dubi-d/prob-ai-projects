@@ -15,7 +15,6 @@ from util import ece, ParameterDistribution
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
 
-
 def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.curdir, output_dir: str = '/results/') -> 'Model':
     """
     Run your task 2 solution.
@@ -118,11 +117,9 @@ class Model(object):
                                         
                     # TODO: Implement Bayes by backprop training here
                     
-                    
-                    current_logits = self.network.forward(batch_x)
                     output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
 
-                    loss = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
+                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
 
                     # Backpropagate to get the gradients
                     loss.backward()
@@ -220,10 +217,7 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-            self.bias_var_posterior = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(torch.zeros((out_features))),
-            torch.nn.Parameter(torch.ones((out_features)))
-            )
+            self.bias_var_posterior = UnivariateGaussian(torch.tensor(0),torch.tensor(1))
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
         else:
@@ -260,7 +254,8 @@ class BayesianLayer(nn.Module):
         else: 
             bias = None
         return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
-class BayesNet(nn.Module):
+    
+    class BayesNet(nn.Module):
     """
     Module implementing a Bayesian feedforward neural network using BayesianLayer objects.
     """
@@ -297,13 +292,9 @@ class BayesNet(nn.Module):
             iii) sample of the log-variational-posterior probability
         """
 
-        
-        
-        
         # TODO: Perform a full pass through your BayesNet as described in this method's docstring.
         #  You can look at DenseNet to get an idea how a forward pass might look like.
         #  Don't forget to apply your activation function in between BayesianLayers!
-        
         
         current_features = x
         log_prior = []
@@ -344,8 +335,7 @@ class BayesNet(nn.Module):
         assert estimated_probability.shape == (x.shape[0], 10)
         assert torch.allclose(torch.sum(estimated_probability, dim=1), torch.tensor(1.0))
         return estimated_probability
-
-
+    
 class UnivariateGaussian(ParameterDistribution):
     """
     Univariate Gaussian distribution.
@@ -422,8 +412,7 @@ class MixedUnivariateGaussian(ParameterDistribution):
         comp = torch.distributions.normal.Normal(torch.Tensor([self.mu, self.mu]), torch.Tensor([self.sigma1, self.sigma2]))
         gmm =  torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
         return gmm.sample() 
-
-
+    
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
     """
     Evaluate your model.

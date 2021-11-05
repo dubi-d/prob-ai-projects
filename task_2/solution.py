@@ -116,8 +116,15 @@ class Model(object):
                 else:
                     # BayesNet training step via Bayes by backprop
                     assert isinstance(self.network, BayesNet)
-
+                                        
                     # TODO: Implement Bayes by backprop training here
+                    
+                    output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
+
+                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
+
+                    # Backpropagate to get the gradients
+                    loss.backward()
 
                 self.optimizer.step()
 
@@ -153,6 +160,7 @@ class Model(object):
         assert output.ndim == 2 and output.shape[1] == 10
         assert np.allclose(np.sum(output, axis=1), 1.0)
         return output
+
 
 class BayesianLayer(nn.Module):
     """
@@ -212,10 +220,9 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-            self.bias_var_posterior = = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(torch.zeros((out_features))),
-            torch.nn.Parameter(torch.ones((out_features)))
-            )
+
+            self.bias_var_posterior = UnivariateGaussian(torch.tensor(0),torch.tensor(1))
+
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
         else:
@@ -249,9 +256,11 @@ class BayesianLayer(nn.Module):
         
         if self.use_bias:
             bias = self.bias_var_posterior.sample()
-        else: 
-            bias == None
+        else:
+
+            bias = None
         return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
+
 
 class BayesNet(nn.Module):
     """
@@ -285,17 +294,35 @@ class BayesNet(nn.Module):
 
         :param x: Input features, float tensor of shape (batch_size, in_features)
         :return: 3-tuple containing
-            i) output features using stochastic weights from the variational posterior,
-            ii) sample of the log-prior probability, and
+            i)   output features using stochastic weights from the variational posterior,
+            ii)  sample of the log-prior probability, and
             iii) sample of the log-variational-posterior probability
         """
 
         # TODO: Perform a full pass through your BayesNet as described in this method's docstring.
         #  You can look at DenseNet to get an idea how a forward pass might look like.
         #  Don't forget to apply your activation function in between BayesianLayers!
-        log_prior = torch.tensor(0.0)
-        log_variational_posterior = torch.tensor(0.0)
-        output_features = None
+        
+        current_features = x
+        log_prior = []
+        log_variational_posterior = []
+
+        for idx, current_layer in enumerate(self.layers):
+            new_features,lp,lvp = current_layer.forward(current_features)
+            if idx < len(self.layers) - 1:
+                new_features = self.activation(new_features)
+            log_prior.append(lp)
+            log_variational_posterior.append(lvp)
+            current_features = new_features
+        
+        log_prior=sum(log_prior)
+        log_variational_posterior=sum(log_variational_posterior)
+        output_features = current_features
+
+        
+        #log_prior = torch.tensor(0.0)
+        #log_variational_posterior = torch.tensor(0.0)
+        #output_features = None
 
         return output_features, log_prior, log_variational_posterior
 
@@ -329,7 +356,6 @@ class UnivariateGaussian(ParameterDistribution):
         self.mu = mu
         self.sigma = sigma
 
-        
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         # TODO: Implement this
         m = torch.distributions.normal.Normal(self.mu, self.sigma)  
@@ -365,7 +391,8 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         sigma = nn.Softplus()(self.rho)
         m = torch.distributions.normal.Normal(self.mu, sigma)  
         return m.sample() 
-    
+
+
 class MixedUnivariateGaussian(ParameterDistribution):
     """
     Mixed Univariate Gaussian distribution.
@@ -392,8 +419,7 @@ class MixedUnivariateGaussian(ParameterDistribution):
         comp = torch.distributions.normal.Normal(torch.Tensor([self.mu, self.mu]), torch.Tensor([self.sigma1, self.sigma2]))
         gmm =  torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
         return gmm.sample() 
-
-
+    
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
     """
     Evaluate your model.

@@ -221,7 +221,7 @@ class BayesianLayer(nn.Module):
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
 
-            self.bias_var_posterior = UnivariateGaussian(torch.tensor(0),torch.tensor(1))
+            self.bias_var_posterior = UnivariateGaussian(torch.nn.Parameter(torch.zeros(1)), torch.nn.Parameter(torch.ones(1)))
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
@@ -251,8 +251,8 @@ class BayesianLayer(nn.Module):
         
         
         weights = self.weights_var_posterior.sample()
-        log_prior = self.prior.log_prob(weights)
-        log_variational_posterior = self.weights_var_posterior.log_prob(weights)
+        log_prior = self.prior.log_likelihood(weights)
+        log_variational_posterior = self.weights_var_posterior.log_likelihood(weights)
         
         if self.use_bias:
             bias = self.bias_var_posterior.sample()
@@ -304,19 +304,18 @@ class BayesNet(nn.Module):
         #  Don't forget to apply your activation function in between BayesianLayers!
         
         current_features = x
-        log_prior = []
-        log_variational_posterior = []
+        log_prior = 0
+        # ToDo (Fehler vo ois) Wie mümmer die log_prior und log_variational_posterior zämesetze als output?
+        log_variational_posterior = 0
 
         for idx, current_layer in enumerate(self.layers):
             new_features,lp,lvp = current_layer.forward(current_features)
             if idx < len(self.layers) - 1:
                 new_features = self.activation(new_features)
-            log_prior.append(lp)
-            log_variational_posterior.append(lvp)
+            log_prior += torch.sum(lp)
+            log_variational_posterior += torch.sum(lvp)
             current_features = new_features
-        
-        log_prior=sum(log_prior)
-        log_variational_posterior=sum(log_variational_posterior)
+
         output_features = current_features
 
         
@@ -351,7 +350,7 @@ class UnivariateGaussian(ParameterDistribution):
 
     def __init__(self, mu: torch.Tensor, sigma: torch.Tensor):
         super(UnivariateGaussian, self).__init__()  # always make sure to include the super-class init call!
-        assert mu.size() == () and sigma.size() == ()
+        #assert mu.size() == () and sigma.size() == ()
         assert sigma > 0
         self.mu = mu
         self.sigma = sigma
@@ -605,11 +604,11 @@ class DenseNet(nn.Module):
 
 
 def main():
-    raise RuntimeError(
-        'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
-        'The checker always calls run_solution directly.\n'
-        'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
-    )
+    #raise RuntimeError(
+    #    'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
+    #    'The checker always calls run_solution directly.\n'
+    #    'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
+    #)
 
     # Load training data
     data_dir = os.curdir

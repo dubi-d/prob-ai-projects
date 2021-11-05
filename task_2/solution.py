@@ -119,6 +119,7 @@ class Model(object):
                     # TODO: Implement Bayes by backprop training here
                     
                     
+<<<<<<< Updated upstream
                     # Perform forward pass
                     current_logits = self.network.forward(batch_x)
 
@@ -131,6 +132,15 @@ class Model(object):
                     loss.backward()
                     loss = loss + 0.1*model.kl_loss()/num_batches
                     loss.backward()
+=======
+                    current_logits = self.network.forward(batch_x)
+                    output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
+
+                    loss = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
+
+                    # Backpropagate to get the gradients
+                    loss.backward()
+>>>>>>> Stashed changes
 
                 self.optimizer.step()
 
@@ -167,8 +177,12 @@ class Model(object):
         assert np.allclose(np.sum(output, axis=1), 1.0)
         return output
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
 
+=======
+    
+>>>>>>> Stashed changes
 =======
     
 >>>>>>> Stashed changes
@@ -219,8 +233,11 @@ class BayesianLayer(nn.Module):
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             self.bias_var_posterior = None
 =======
+=======
+>>>>>>> Stashed changes
             self.bias_var_posterior = MultivariateDiagonalGaussian(
             torch.nn.Parameter(torch.zeros((out_features))),
             torch.nn.Parameter(torch.ones((out_features)))
@@ -272,6 +289,9 @@ class BayesianLayer(nn.Module):
         else: 
             bias = None
         return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 class BayesNet(nn.Module):
     """

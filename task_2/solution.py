@@ -307,13 +307,6 @@ class UnivariateGaussian(ParameterDistribution):
         self.mu = mu
         self.sigma = sigma
 
-    def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement this
-        return 0.0
-
-    def sample(self) -> torch.Tensor:
-        # TODO: Implement this
-        raise NotImplementedError()
         
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         # TODO: Implement this

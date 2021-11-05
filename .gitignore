@@ -2,3 +2,5 @@ venv
 .idea
 *.pdf
 *.byte
+*.ipynb_checkpoints
+*/__pycache__

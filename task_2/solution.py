@@ -188,10 +188,8 @@ class BayesianLayer(nn.Module):
         #  You can create constants using torch.tensor(...).
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
-        
-        mu = torch.tensor(0)
-        sigma = torch.tensor(1)
-        self.prior = UnivariateGaussian(mu,sigma)
+
+        self.prior = MultivariateDiagonalGaussian(torch.zeros((out_features, in_features)), torch.ones((out_features, in_features)))  # use for weights and biases
         
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
@@ -208,11 +206,9 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.zeros((out_features, in_features))),
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
-        
-        self.weights_var_posterior = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(torch.zeros((out_features, in_features))),
-            torch.nn.Parameter(torch.ones((out_features, in_features)))
-        )
+        mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
+        sigma_w = torch.nn.Parameter(torch.ones((out_features, in_features)))
+        self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
         assert any(True for _ in self.weights_var_posterior.parameters()), 'Weight posterior must have parameters'
@@ -220,8 +216,9 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-
-            self.bias_var_posterior = UnivariateGaussian(torch.nn.Parameter(torch.zeros(1)), torch.nn.Parameter(torch.ones(1)))
+            mu_b = torch.nn.Parameter(torch.zeros(out_features, 1))
+            sigma_b = torch.nn.Parameter(torch.ones(out_features, 1))
+            self.bias_var_posterior = MultivariateDiagonalGaussian(mu_b, sigma_b)
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
@@ -248,18 +245,20 @@ class BayesianLayer(nn.Module):
         #log_prior = torch.tensor(0.0)
         #log_prior = self.prior.log_prob(weights)
         #log_variational_posterior = torch.tensor(0.0)
-        
-        
+
         weights = self.weights_var_posterior.sample()
         log_prior = self.prior.log_likelihood(weights)
         log_variational_posterior = self.weights_var_posterior.log_likelihood(weights)
         
         if self.use_bias:
             bias = self.bias_var_posterior.sample()
+            bias_prior_ll = self.prior.log_likelihood(bias)
+            log_prior += bias_prior_ll
+            bias_post_ll = self.bias_var_posterior.log_likelihood(bias)
+            log_variational_posterior += bias_post_ll
         else:
-
             bias = None
-        return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
+        return F.linear(inputs, weights, bias.squeeze()), log_prior, log_variational_posterior
 
 
 class BayesNet(nn.Module):
@@ -305,15 +304,14 @@ class BayesNet(nn.Module):
         
         current_features = x
         log_prior = 0
-        # ToDo (Fehler vo ois) Wie mümmer die log_prior und log_variational_posterior zämesetze als output?
         log_variational_posterior = 0
 
         for idx, current_layer in enumerate(self.layers):
-            new_features,lp,lvp = current_layer.forward(current_features)
+            new_features, lp, lvp = current_layer.forward(current_features)
             if idx < len(self.layers) - 1:
                 new_features = self.activation(new_features)
-            log_prior += torch.sum(lp)
-            log_variational_posterior += torch.sum(lvp)
+            log_prior += lp
+            log_variational_posterior += lvp
             current_features = new_features
 
         output_features = current_features
@@ -358,7 +356,7 @@ class UnivariateGaussian(ParameterDistribution):
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         # TODO: Implement this
         m = torch.distributions.normal.Normal(self.mu, self.sigma)  
-        return m.log_prob(values) 
+        return torch.sum(m.log_prob(values))
     
     def sample(self) -> torch.Tensor:
         # TODO: Implement this
@@ -384,7 +382,7 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         sigma = nn.Softplus()(self.rho)
         m = torch.distributions.normal.Normal(self.mu, sigma)  
-        return m.log_prob(values) 
+        return torch.sum(m.log_prob(values))
     
     def sample(self) -> torch.Tensor:
         sigma = nn.Softplus()(self.rho)

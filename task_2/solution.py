@@ -189,7 +189,8 @@ class BayesianLayer(nn.Module):
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
 
-        self.prior = MultivariateDiagonalGaussian(torch.zeros((out_features, in_features)), torch.ones((out_features, in_features)))  # use for weights and biases
+        self.prior = MultivariateDiagonalGaussian(torch.zeros((out_features, in_features)),
+                                                  torch.ones((out_features, in_features)))  # use for weights and biases
         
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
@@ -348,20 +349,17 @@ class UnivariateGaussian(ParameterDistribution):
 
     def __init__(self, mu: torch.Tensor, sigma: torch.Tensor):
         super(UnivariateGaussian, self).__init__()  # always make sure to include the super-class init call!
-        #assert mu.size() == () and sigma.size() == ()
+        assert mu.size() == () and sigma.size() == ()
         assert sigma > 0
         self.mu = mu
         self.sigma = sigma
+        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement this
-        m = torch.distributions.normal.Normal(self.mu, self.sigma)  
-        return torch.sum(m.log_prob(values))
+        return torch.sum(self.distribution.log_prob(values))
     
     def sample(self) -> torch.Tensor:
-        # TODO: Implement this
-        m = torch.distributions.normal.Normal(self.mu, self.sigma)  
-        return m.sample() 
+        return self.distribution.sample()
 
 
 class MultivariateDiagonalGaussian(ParameterDistribution):
@@ -377,17 +375,14 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         super(MultivariateDiagonalGaussian, self).__init__()  # always make sure to include the super-class init call!
         assert mu.size() == rho.size()
         self.mu = mu
-        self.rho = rho
+        self.sigma = F.softplus(rho)
+        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        sigma = nn.Softplus()(self.rho)
-        m = torch.distributions.normal.Normal(self.mu, sigma)  
-        return torch.sum(m.log_prob(values))
+        return torch.sum(self.distribution.log_prob(values))
     
     def sample(self) -> torch.Tensor:
-        sigma = nn.Softplus()(self.rho)
-        m = torch.distributions.normal.Normal(self.mu, sigma)  
-        return m.sample() 
+        return self.distribution.sample()
 
 
 class MixedUnivariateGaussian(ParameterDistribution):

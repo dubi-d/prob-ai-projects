@@ -56,10 +56,10 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
-        self.num_epochs = 10  # number of training epochs
+        self.num_epochs = 100 # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (50, 50)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (100, 100)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
 
@@ -117,14 +117,17 @@ class Model(object):
                     # BayesNet training step via Bayes by backprop
                     assert isinstance(self.network, BayesNet)
                                         
-                    # TODO: Implement Bayes by backprop training here
+                    # Bayes by backprop training step
                     
+                    # Perform forward pass
                     output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
-
-                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
+                    
+                    # Calculate the loss
+                    # We use the negative log likelihood as the loss
+                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior/num_batches + log_variational_posterior/num_batches
 
                     # Backpropagate to get the gradients
-                    loss.backward()#retain_graph=True)
+                    loss.backward(retain_graph=True)
 
                 self.optimizer.step()
 
@@ -155,7 +158,7 @@ class Model(object):
             current_probabilities = self.network.predict_probabilities(batch_x).detach().numpy()
             probability_batches.append(current_probabilities)
         
-        ##
+        ##potentially callibrate here..
         
         
         output = np.concatenate(probability_batches, axis=0)
@@ -192,9 +195,10 @@ class BayesianLayer(nn.Module):
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
 
-        self.prior = MultivariateDiagonalGaussian(torch.zeros((out_features, in_features)),
-                                                  torch.ones((out_features, in_features)))  # use for weights and biases
+        self.prior = MultivariateDiagonalGaussian(torch.zeros(out_features, in_features),
+                                                  torch.ones(out_features, in_features))  # use for weights and biases
         
+
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
 
@@ -247,10 +251,6 @@ class BayesianLayer(nn.Module):
         #  Make sure to check whether `self.use_bias` is True,
         #  and if yes, include the bias as well.
         
-        #log_prior = torch.tensor(0.0)
-        #log_prior = self.prior.log_prob(weights)
-        #log_variational_posterior = torch.tensor(0.0)
-
         weights = self.weights_var_posterior.sample()
         log_prior = self.prior.log_likelihood(weights)
         log_variational_posterior = self.weights_var_posterior.log_likelihood(weights)
@@ -390,11 +390,9 @@ class MixedUnivariateGaussian(ParameterDistribution):
     Mixed Univariate Gaussian distribution.
     For multivariate data, this assumes all elements to be i.i.d.
     """
-    
     def __init__(self, mu: torch.Tensor, sigma1: torch.Tensor, sigma2: torch.Tensor, pi: float):
         super(MixedUnivariateGaussian, self).__init__()  # always make sure to include the super-class init call!
-        assert mu.size() == () and sigma.size() == ()
-        assert sigma > 0
+        assert mu.size() == sigma1.size() and sigma1.size() == sigma2.size()
         self.mu = mu
         self.sigma1 = sigma1        
         self.sigma2 = sigma2

@@ -154,7 +154,10 @@ class Model(object):
         for batch_x, batch_y in data_loader:
             current_probabilities = self.network.predict_probabilities(batch_x).detach().numpy()
             probability_batches.append(current_probabilities)
-
+        
+        ##
+        
+        
         output = np.concatenate(probability_batches, axis=0)
         assert isinstance(output, np.ndarray)
         assert output.ndim == 2 and output.shape[1] == 10

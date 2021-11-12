@@ -56,10 +56,10 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
-        self.num_epochs = 100  # number of training epochs
+        self.num_epochs = 10  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (100, 100)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (50, 50)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
 
@@ -124,7 +124,7 @@ class Model(object):
                     loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
 
                     # Backpropagate to get the gradients
-                    loss.backward()
+                    loss.backward()#retain_graph=True)
 
                 self.optimizer.step()
 
@@ -207,6 +207,7 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.zeros((out_features, in_features))),
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
+        
         mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
         sigma_w = torch.nn.Parameter(torch.ones((out_features, in_features)))
         self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
@@ -302,10 +303,10 @@ class BayesNet(nn.Module):
         # TODO: Perform a full pass through your BayesNet as described in this method's docstring.
         #  You can look at DenseNet to get an idea how a forward pass might look like.
         #  Don't forget to apply your activation function in between BayesianLayers!
-        
+        log_prior = torch.tensor(0.0)
+        log_variational_posterior = torch.tensor(0.0)        
         current_features = x
-        log_prior = 0
-        log_variational_posterior = 0
+
 
         for idx, current_layer in enumerate(self.layers):
             new_features, lp, lvp = current_layer.forward(current_features)
@@ -316,12 +317,6 @@ class BayesNet(nn.Module):
             current_features = new_features
 
         output_features = current_features
-
-        
-        #log_prior = torch.tensor(0.0)
-        #log_variational_posterior = torch.tensor(0.0)
-        #output_features = None
-
         return output_features, log_prior, log_variational_posterior
 
     def predict_probabilities(self, x: torch.Tensor, num_mc_samples: int = 10) -> torch.Tensor:
@@ -356,6 +351,7 @@ class UnivariateGaussian(ParameterDistribution):
         self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
+        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma) #update distribution
         return torch.sum(self.distribution.log_prob(values))
     
     def sample(self) -> torch.Tensor:
@@ -379,6 +375,7 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
+        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
         return torch.sum(self.distribution.log_prob(values))
     
     def sample(self) -> torch.Tensor:

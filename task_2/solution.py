@@ -26,7 +26,7 @@ def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.cur
     :return: Your trained model
     """
 
-    # Create model
+    # Create model 
     model = Model()
 
     # Train the model
@@ -40,7 +40,7 @@ def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.cur
     )
     evaluate(model, eval_loader, data_dir, output_dir)
 
-    # IMPORTANT: return your model here!
+    # IMPORTANT: return your model here!.
     return model
 
 
@@ -52,7 +52,7 @@ class Model(object):
     """
 
     def __init__(self):
-        # Hyperparameters and general parameters
+        # Hyperparameters and general parameters 
         # You might want to play around with those
         self.num_epochs = 5  # number of training epochs
         self.batch_size = 128  # training batch size
@@ -116,6 +116,7 @@ class Model(object):
                                                             
                     # Perform forward pass
                     output_features, log_prior, log_variational_posterior = self.network(batch_x)
+                    
                     
                     # Calculate the loss
                     # We use the negative log likelihood as the loss

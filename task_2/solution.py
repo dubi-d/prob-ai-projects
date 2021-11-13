@@ -56,6 +56,7 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
+        self.num_samples = 6 # samples per batch
         self.num_epochs = 100  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
@@ -118,13 +119,14 @@ class Model(object):
                     assert isinstance(self.network, BayesNet)
                                         
                     # TODO: Implement Bayes by backprop training here
-                    
-                    output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
-
-                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior + log_variational_posterior
+                    loss = torch.tensor(0.0)
+                    for i in range(self.num_samples):
+                        output_features, lp, lvp = self.network.forward(batch_x)
+                        data_nll = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum')
+                        loss += num_batches * data_nll - lp + lvp
 
                     # Backpropagate to get the gradients
-                    loss.backward()
+                    loss.backward(retain_graph=True)
 
                 self.optimizer.step()
 
@@ -189,8 +191,10 @@ class BayesianLayer(nn.Module):
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
 
-        self.prior = MultivariateDiagonalGaussian(torch.zeros((out_features, in_features)),
-                                                  torch.ones((out_features, in_features)))  # use for weights and biases
+        self.prior = MultivariateDiagonalGaussian(torch.ones((out_features, in_features))
+                                                  + 0 * torch.rand((out_features, in_features)),
+                                                  torch.ones((out_features, in_features))
+                                                  + 0 * torch.rand((out_features, in_features)))  # use for weights and biases
         
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
@@ -207,8 +211,10 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.zeros((out_features, in_features))),
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
-        mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
-        sigma_w = torch.nn.Parameter(torch.ones((out_features, in_features)))
+        mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features))
+                                  + 0.2 * torch.rand((out_features, in_features)))
+        sigma_w = torch.nn.Parameter(4.5 * torch.ones((out_features, in_features))
+                                     + 0.5 * torch.rand((out_features, in_features)))
         self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
@@ -217,8 +223,8 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-            mu_b = torch.nn.Parameter(torch.zeros(out_features, 1))
-            sigma_b = torch.nn.Parameter(torch.ones(out_features, 1))
+            mu_b = torch.nn.Parameter(torch.zeros(out_features, 1) + 0.2 * torch.rand((out_features, 1)))
+            sigma_b = torch.nn.Parameter(4.5 * torch.ones(out_features, 1) + 0.5 * torch.rand((out_features, 1)))
             self.bias_var_posterior = MultivariateDiagonalGaussian(mu_b, sigma_b)
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
@@ -304,8 +310,8 @@ class BayesNet(nn.Module):
         #  Don't forget to apply your activation function in between BayesianLayers!
         
         current_features = x
-        log_prior = 0
-        log_variational_posterior = 0
+        log_prior = torch.tensor(0.0)
+        log_variational_posterior = torch.tensor(0.0)
 
         for idx, current_layer in enumerate(self.layers):
             new_features, lp, lvp = current_layer.forward(current_features)
@@ -376,13 +382,14 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         assert mu.size() == rho.size()
         self.mu = mu
         self.sigma = F.softplus(rho)
-        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        return torch.sum(self.distribution.log_prob(values))
+        distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
+        return torch.sum(distribution.log_prob(values))
     
     def sample(self) -> torch.Tensor:
-        return self.distribution.sample()
+        distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
+        return distribution.sample()
 
 
 class MixedUnivariateGaussian(ParameterDistribution):

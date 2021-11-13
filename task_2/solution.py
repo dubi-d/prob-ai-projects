@@ -54,10 +54,10 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters 
         # You might want to play around with those
-        self.num_epochs = 5  # number of training epochs
+        self.num_epochs = 40  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (30, 30)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (40, 40)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
 
@@ -209,8 +209,8 @@ class BayesianLayer(nn.Module):
         #  )
         
         self.weights_var_posterior = MultivariateDiagonalGaussian(
-                nn.Parameter(0.2*torch.randn((out_features, in_features))), 
-                nn.Parameter(torch.randn((out_features, in_features))-5)
+                nn.Parameter(0.1*torch.randn((out_features, in_features))), 
+                nn.Parameter(torch.randn((out_features, in_features))-3)
         )
 
 
@@ -221,8 +221,8 @@ class BayesianLayer(nn.Module):
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
             self.bias_var_posterior = MultivariateDiagonalGaussian(
-                nn.Parameter(0.2*torch.randn((out_features, 1))), 
-                nn.Parameter(torch.randn((out_features, 1))-5)
+                nn.Parameter(0.1*torch.randn((out_features, 1))), 
+                nn.Parameter(torch.randn((out_features, 1))-3)
             )
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)

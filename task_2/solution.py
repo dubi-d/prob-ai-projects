@@ -1,6 +1,5 @@
 import os
 import typing
-
 import numpy as np
 import torch
 import torch.optim
@@ -9,20 +8,19 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from torch import nn
 from torch.nn import functional as F
 from tqdm import trange
-
 from util import ece, ParameterDistribution
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
 
+torch.pi = torch.tensor(np.pi)
 
-def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.curdir, output_dir: str = '/results/') -> 'Model':
+def run_solution(dataset_train: torch.utils.data.Dataset, data_dir: str = os.curdir,output_dir: str = '/results/') -> 'Model':
     """
     Run your task 2 solution.
     This method should train your model, evaluate it, and return the trained model at the end.
     Make sure to preserve the method signature and to return your trained model,
     else the checker will fail!
-
     :param dataset_train: Training dataset
     :param data_dir: Directory containing the datasets
     :return: Your trained model
@@ -56,13 +54,15 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
-        self.num_epochs = 1 # number of training epochs
+        NUM_SAMPLES = 5
+
+        self.num_epochs = 1  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (50, 50)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (30, 80)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
-
+        self.num_samples = NUM_SAMPLES
         # Determine network type
         if use_densenet:
             # DenseNet
@@ -82,7 +82,6 @@ class Model(object):
         Train your neural network.
         If the network is a DenseNet, this performs normal stochastic gradient descent training.
         If the network is a BayesNet, this should perform Bayes by backprop.
-
         :param dataset: Dataset you should use for training
         """
 
@@ -113,21 +112,20 @@ class Model(object):
 
                     # Backpropagate to get the gradients
                     loss.backward()
-                else:
+                else:                    
                     # BayesNet training step via Bayes by backprop
                     assert isinstance(self.network, BayesNet)
-                                        
-                    # Bayes by backprop training step
-                    
+                                                            
                     # Perform forward pass
-                    output_features, log_prior, log_variational_posterior = self.network.forward(batch_x)
+                    output_features, log_prior, log_variational_posterior = self.network(batch_x)
                     
                     # Calculate the loss
                     # We use the negative log likelihood as the loss
                     loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior/num_batches + log_variational_posterior/num_batches
+                    
                     # Backpropagate to get the gradients
                     loss.backward(retain_graph=True)
-
+                
                 self.optimizer.step()
 
                 # Update progress bar with accuracy occasionally
@@ -173,10 +171,10 @@ class BayesianLayer(nn.Module):
     It maintains a prior and variational posterior for the weights (and biases)
     and uses sampling to approximate the gradients via Bayes by backprop.
     """
+
     def __init__(self, in_features: int, out_features: int, bias: bool = True):
         """
         Create a BayesianLayer.
-
         :param in_features: Number of input features
         :param out_features: Number of output features
         :param bias: If true, use a bias term (i.e., affine instead of linear transformation)
@@ -185,23 +183,17 @@ class BayesianLayer(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.use_bias = bias
-
-        
-        
+                
         # TODO: Create a suitable prior for weights and biases as an instance of ParameterDistribution.
         #  You can use the same prior for both weights and biases, but are free to experiment with different priors.
         #  You can create constants using torch.tensor(...).
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
 
-        self.prior = MultivariateDiagonalGaussian(torch.zeros(out_features, in_features),
-                                                  torch.ones(out_features, in_features))  # use for weights and biases
+        self.prior = UnivariateGaussian(torch.tensor(0.0), torch.tensor(1.0))
         
-
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
-
-        
         
         # TODO: Create a suitable variational posterior for weights as an instance of ParameterDistribution.
         #  You need to create separate ParameterDistribution instances for weights and biases,
@@ -214,9 +206,13 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
         
-        mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
-        sigma_w = torch.nn.Parameter(torch.ones((out_features, in_features)))
-        self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
+        #mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
+        #sigma_w = torch.nn.Parameter(0.5413*torch.ones((out_features, in_features)))
+        #self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
+        
+        weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-0.2, 0.2))
+        weight_rho = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-5, -4))
+        self.weights_var_posterior = MultivariateDiagonalGaussian(weight_mu, weight_rho)
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
         assert any(True for _ in self.weights_var_posterior.parameters()), 'Weight posterior must have parameters'
@@ -224,9 +220,13 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-            mu_b = torch.nn.Parameter(torch.zeros(out_features, 1))
-            sigma_b = torch.nn.Parameter(torch.ones(out_features, 1))
-            self.bias_var_posterior = MultivariateDiagonalGaussian(mu_b, sigma_b)
+            bias_mu = nn.Parameter(torch.Tensor(out_features, 1).uniform_(-0.2, 0.2))
+            bias_rho = nn.Parameter(torch.Tensor(out_features, 1).uniform_(-5, -4))
+            self.bias_var_posterior = MultivariateDiagonalGaussian(bias_mu, bias_rho)
+            
+            #mu_b = torch.nn.Parameter(torch.zeros(out_features, 1))
+            #rho_b = torch.nn.Parameter(0.5413* torch.ones(out_features, 1))
+            #self.bias_var_posterior = MultivariateDiagonalGaussian(mu_b, rho_b)
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
@@ -239,7 +239,7 @@ class BayesianLayer(nn.Module):
         If you need to sample weights from the variational posterior, you can do it here during the forward pass.
         Just make sure that you use the same weights to approximate all quantities
         present in a single Bayes by backprop sampling step.
-
+        
         :param inputs: Flattened input images as a (batch_size, in_features) float tensor
         :return: 3-tuple containing
             i) transformed features using stochastic weights from the variational posterior,
@@ -250,6 +250,16 @@ class BayesianLayer(nn.Module):
         #  Make sure to check whether `self.use_bias` is True,
         #  and if yes, include the bias as well.
         
+        sample_weights = self.weights_var_posterior.sample()
+        sample_biases = torch.zeros((sample_weights.shape[0], 1))
+        log_prior = self.prior.log_likelihood(sample_weights)
+        log_variational_posterior = self.weights_var_posterior.log_likelihood(sample_weights)
+        
+        if self.use_bias:
+            sample_biases = self.bias_var_posterior.sample()
+            log_prior += self.prior.log_likelihood(sample_biases)
+            log_variational_posterior += self.bias_var_posterior.log_likelihood(sample_biases)
+        """
         weights = self.weights_var_posterior.sample()
         log_prior = self.prior.log_likelihood(weights)
         log_variational_posterior = self.weights_var_posterior.log_likelihood(weights)
@@ -263,8 +273,9 @@ class BayesianLayer(nn.Module):
             bias_post_ll = self.bias_var_posterior.log_likelihood(bias)
             log_variational_posterior += bias_post_ll
         else:
-            bias = None
-        return F.linear(inputs, weights, bias.squeeze()), log_prior, log_variational_posterior
+            bias = None    
+        """
+        return F.linear(inputs, sample_weights, torch.squeeze(sample_biases)), log_prior, log_variational_posterior
 
 
 class BayesNet(nn.Module):
@@ -275,7 +286,6 @@ class BayesNet(nn.Module):
     def __init__(self, in_features: int, hidden_features: typing.Tuple[int, ...], out_features: int):
         """
         Create a BNN.
-
         :param in_features: Number of input features
         :param hidden_features: Tuple where each entry corresponds to a (Bayesian) hidden layer with
             the corresponding number of features.
@@ -296,22 +306,20 @@ class BayesNet(nn.Module):
         """
         Perform one forward pass through the BNN using a single set of weights
         sampled from the variational posterior.
-
         :param x: Input features, float tensor of shape (batch_size, in_features)
         :return: 3-tuple containing
-            i)   output features using stochastic weights from the variational posterior,
-            ii)  sample of the log-prior probability, and
+            i) output features using stochastic weights from the variational posterior,
+            ii) sample of the log-prior probability, and
             iii) sample of the log-variational-posterior probability
         """
-
+        
         # TODO: Perform a full pass through your BayesNet as described in this method's docstring.
         #  You can look at DenseNet to get an idea how a forward pass might look like.
         #  Don't forget to apply your activation function in between BayesianLayers!
         log_prior = torch.tensor(0.0)
         log_variational_posterior = torch.tensor(0.0)        
-        current_features = x
-
-
+        current_features = x        
+        
         for idx, current_layer in enumerate(self.layers):
             new_features, lp, lvp = current_layer(current_features)
             if idx < len(self.layers) - 1:
@@ -321,12 +329,12 @@ class BayesNet(nn.Module):
             current_features = new_features
 
         output_features = current_features
+
         return output_features, log_prior, log_variational_posterior
 
     def predict_probabilities(self, x: torch.Tensor, num_mc_samples: int = 10) -> torch.Tensor:
         """
         Predict class probabilities for the given features by sampling from this BNN.
-
         :param x: Features to predict on, float tensor of shape (batch_size, in_features)
         :param num_mc_samples: Number of MC samples to take for prediction
         :return: Predicted class probabilities, float tensor of shape (batch_size, 10)
@@ -353,10 +361,10 @@ class UnivariateGaussian(ParameterDistribution):
         self.sigma = sigma
 
     def log_likelihood(self, value: torch.Tensor) -> torch.Tensor:
-        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
+        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(value))
 
     def sample(self) -> torch.Tensor:
-        return self.mu + self.sigma*torch.randn(self.sigma.size())
+        return self.mu + self.sigma * torch.randn(self.sigma.size())
 
 
 class MultivariateDiagonalGaussian(ParameterDistribution):
@@ -370,16 +378,15 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         super(MultivariateDiagonalGaussian, self).__init__()  # always make sure to include the super-class init call!
         assert mu.size() == rho.size()
         self.mu = mu
-        self.sigma = F.softplus(rho)
+        self.rho =rho 
         
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
+        return torch.sum(torch.distributions.normal.Normal(self.mu, F.softplus(self.rho)).log_prob(values))
 
     def sample(self) -> torch.Tensor:
-        return self.mu + self.sigma*torch.randn(self.sigma.size())
+        return self.mu + F.softplus(self.rho) * torch.randn(self.rho.size())
 
 
-    
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
     """
     Evaluate your model.
@@ -415,7 +422,8 @@ def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: s
                 sample_idx = most_confident_indices[5 * row // 2 + col]
                 ax[row, col].imshow(np.reshape(eval_samples[sample_idx], (28, 28)), cmap='gray')
                 ax[row, col].set_axis_off()
-                ax[row + 1, col].set_title(f'predicted {predicted_classes[sample_idx]}, actual {actual_classes[sample_idx]}')
+                ax[row + 1, col].set_title(
+                    f'predicted {predicted_classes[sample_idx]}, actual {actual_classes[sample_idx]}')
                 bar_colors = ['C0'] * 10
                 bar_colors[actual_classes[sample_idx]] = 'C1'
                 ax[row + 1, col].bar(
@@ -433,7 +441,8 @@ def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: s
                 sample_idx = least_confident_indices[5 * row // 2 + col]
                 ax[row, col].imshow(np.reshape(eval_samples[sample_idx], (28, 28)), cmap='gray')
                 ax[row, col].set_axis_off()
-                ax[row + 1, col].set_title(f'predicted {predicted_classes[sample_idx]}, actual {actual_classes[sample_idx]}')
+                ax[row + 1, col].set_title(
+                    f'predicted {predicted_classes[sample_idx]}, actual {actual_classes[sample_idx]}')
                 bar_colors = ['C0'] * 10
                 bar_colors[actual_classes[sample_idx]] = 'C1'
                 ax[row + 1, col].bar(
@@ -443,7 +452,8 @@ def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: s
         fig.savefig(os.path.join(output_dir, 'mnist_least_confident.pdf'))
 
         print('Plotting ambiguous and rotated MNIST confidences')
-        ambiguous_samples = torch.from_numpy(np.load(os.path.join(data_dir, 'test_x.npz'))['test_x']).reshape([-1, 784])[:10]
+        ambiguous_samples = torch.from_numpy(np.load(os.path.join(data_dir, 'test_x.npz'))['test_x']).reshape(
+            [-1, 784])[:10]
         ambiguous_dataset = torch.utils.data.TensorDataset(ambiguous_samples, torch.zeros(10))
         ambiguous_loader = torch.utils.data.DataLoader(
             ambiguous_dataset, batch_size=10, shuffle=False, drop_last=False
@@ -530,7 +540,6 @@ class DenseNet(nn.Module):
     def __init__(self, in_features: int, hidden_features: typing.Tuple[int, ...], out_features: int):
         """
         Create a normal NN.
-
         :param in_features: Number of input features
         :param hidden_features: Tuple where each entry corresponds to a hidden layer with
             the corresponding number of features.
@@ -565,11 +574,11 @@ class DenseNet(nn.Module):
 
 
 def main():
-    #raise RuntimeError(
-    #    'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
-    #    'The checker always calls run_solution directly.\n'
-    #    'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
-    #)
+    # raise RuntimeError(
+    #     'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
+    #     'The checker always calls run_solution directly.\n'
+    #     'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
+    # )
 
     # Load training data
     data_dir = os.curdir

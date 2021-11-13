@@ -56,7 +56,7 @@ class Model(object):
         # You might want to play around with those
         NUM_SAMPLES = 5
 
-        self.num_epochs = 10  # number of training epochs
+        self.num_epochs = 1  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
         hidden_layers = (30, 80)  # for each entry, creates a hidden layer with the corresponding number of units
@@ -115,11 +115,9 @@ class Model(object):
                 else:
                     # BayesNet training step via Bayes by backprop
                     assert isinstance(self.network, BayesNet)
-                    loss = torch.tensor(0.)
-                    for i in range(self.num_samples):
-                        current_logits, log_prior, log_post = self.network(batch_x)
-                        data_log_like = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
-                        loss += (log_post/num_batches - log_prior/num_batches + data_log_like)/self.num_samples
+                    current_logits, log_prior, log_post = self.network(batch_x)
+                    data_log_like = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
+                    loss = log_post/num_batches - log_prior/num_batches + data_log_like
 
                     loss.backward(retain_graph=True)
 
@@ -315,15 +313,10 @@ class UnivariateGaussian(ParameterDistribution):
         self.sigma = sigma
 
     def log_likelihood(self, value: torch.Tensor) -> torch.Tensor:
-        # Assuming single float input
-        ll = - 0.5 * torch.log(2 * torch.pi * torch.square(self.sigma)) - torch.square(self.mu - value) \
-               / (2 * torch.square(self.sigma))
-        print(ll.size())
-        return ll
+        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
 
     def sample(self) -> torch.Tensor:
-        eps = np.random.normal()
-        return self.mu + self.sigma * eps
+        return self.mu + self.sigma*torch.randn(self.sigma.size())
 
 
 class MultivariateDiagonalGaussian(ParameterDistribution):
@@ -335,59 +328,15 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
 
     def __init__(self, mu: torch.Tensor, rho: torch.Tensor):
         super(MultivariateDiagonalGaussian, self).__init__()  # always make sure to include the super-class init call!
-        # Assuming mu and rho are a 2D tensor (n x m)
         assert mu.size() == rho.size()
         self.mu = mu
-        self.rho = rho
-        self.sigma = torch.log(1 + torch.exp(rho))
+        self.sigma = F.softplus(rho)
         
-
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # Assuming values is a 2D Tensor (n x m), outputs a single log_likelihood across all dimensions
-        DAMPING_FACTOR = 1
-        loss = torch.div(torch.square(values - self.mu), 2 * torch.square(self.sigma))
-        return torch.sum(-loss - torch.log(2 * torch.pi * torch.square(self.sigma)) / DAMPING_FACTOR)
+        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
 
     def sample(self) -> torch.Tensor:
-        eps = np.random.normal()
-        return self.mu + self.sigma * eps
-
-
-class ScaleMixtureMVGaussian(ParameterDistribution):
-    """
-    ScaleMixture Gaussian to implement Spike and Slab model as per Bayes by Backprop paper. Note that this
-    implementation is prone to potential underflow and the computation of the log likelihood is not optimized
-    """
-
-    def __init__(self, rho1: torch.Tensor, rho2: torch.Tensor, alpha: float):
-        super(ScaleMixtureMVGaussian, self).__init__()  # always make sure to include the super-class init call!
-        assert rho1.size() == rho2.size()
-        # Assumes mu and sigmas are 2D (n x m) as per Multivariate Gaussian
-        sigma1 = torch.log(1 + torch.exp(rho1))
-        sigma2 = torch.log(1 + torch.exp(rho2))
-        self.gaussian1 = MultivariateDiagonalGaussian(torch.zeros(sigma1.shape), sigma1)
-        self.gaussian2 = MultivariateDiagonalGaussian(torch.zeros(sigma2.shape), sigma2)
-        self.alpha = alpha
-
-    def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # Assumes values are 2D (n x m) as per Multivariate Gaussian
-        log_like_1 = self.gaussian1.log_likelihood(values)
-        log_like_2 = self.gaussian2.log_likelihood(values)
-        if log_like_2 > log_like_1 * 10:
-            log_like = log_like_2
-        elif log_like_1 > log_like_2 * 10:
-            log_like = log_like_1
-        else:
-            offset = (log_like_2 + log_like_1) / 2
-            likelihood = self.alpha * torch.exp(log_like_1 - offset) + (1 - self.alpha) * torch.exp(log_like_2 - offset)
-            log_like = torch.log(likelihood) + offset
-
-        return log_like
-
-    def sample(self) -> torch.Tensor:
-        eps1 = np.random.normal()
-        eps2 = np.random.normal()
-        return self.mu + self.alpha * self.sigma1 * eps1 + (1 - self.alpha) * self.sigma2 * eps2
+        return self.mu + self.sigma*torch.randn(self.sigma.size())
 
 
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):

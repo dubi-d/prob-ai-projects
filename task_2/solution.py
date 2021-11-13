@@ -56,10 +56,10 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
-        self.num_epochs = 100 # number of training epochs
+        self.num_epochs = 1 # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (100, 100)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (50, 50)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
 
@@ -125,7 +125,6 @@ class Model(object):
                     # Calculate the loss
                     # We use the negative log likelihood as the loss
                     loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior/num_batches + log_variational_posterior/num_batches
-
                     # Backpropagate to get the gradients
                     loss.backward(retain_graph=True)
 
@@ -257,8 +256,10 @@ class BayesianLayer(nn.Module):
         
         if self.use_bias:
             bias = self.bias_var_posterior.sample()
+            
             bias_prior_ll = self.prior.log_likelihood(bias)
             log_prior += bias_prior_ll
+            
             bias_post_ll = self.bias_var_posterior.log_likelihood(bias)
             log_variational_posterior += bias_post_ll
         else:
@@ -312,7 +313,7 @@ class BayesNet(nn.Module):
 
 
         for idx, current_layer in enumerate(self.layers):
-            new_features, lp, lvp = current_layer.forward(current_features)
+            new_features, lp, lvp = current_layer(current_features)
             if idx < len(self.layers) - 1:
                 new_features = self.activation(new_features)
             log_prior += lp
@@ -341,8 +342,7 @@ class BayesNet(nn.Module):
 
 class UnivariateGaussian(ParameterDistribution):
     """
-    Univariate Gaussian distribution.
-    For multivariate data, this assumes all elements to be i.i.d.
+    Univariate Gaussian distribution. For multivariate data, this assumes all elements to be i.i.d.
     """
 
     def __init__(self, mu: torch.Tensor, sigma: torch.Tensor):
@@ -351,22 +351,18 @@ class UnivariateGaussian(ParameterDistribution):
         assert sigma > 0
         self.mu = mu
         self.sigma = sigma
-        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
 
-    def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma) #update distribution
-        return torch.sum(self.distribution.log_prob(values))
-    
+    def log_likelihood(self, value: torch.Tensor) -> torch.Tensor:
+        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
+
     def sample(self) -> torch.Tensor:
-        return self.distribution.sample()
+        return self.mu + self.sigma*torch.randn(self.sigma.size())
 
 
 class MultivariateDiagonalGaussian(ParameterDistribution):
     """
-    Multivariate diagonal Gaussian distribution,
-    i.e., assumes all elements to be independent Gaussians
-    but with different means and standard deviations.
-    This parameterizes the standard deviation via a parameter rho as
+    Multivariate diagonal Gaussian distribution, i.e., assumes all elements to be independent Gaussians but with
+    different means and standard deviations. This parameterizes the standard deviation via a parameter rho as
     sigma = softplus(rho).
     """
 
@@ -375,40 +371,14 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         assert mu.size() == rho.size()
         self.mu = mu
         self.sigma = F.softplus(rho)
-        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
-
+        
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        self.distribution = torch.distributions.normal.Normal(self.mu, self.sigma)
-        return torch.sum(self.distribution.log_prob(values))
-    
+        return torch.sum(torch.distributions.normal.Normal(self.mu, self.sigma).log_prob(values))
+
     def sample(self) -> torch.Tensor:
-        return self.distribution.sample()
+        return self.mu + self.sigma*torch.randn(self.sigma.size())
 
 
-class MixedUnivariateGaussian(ParameterDistribution):
-    """
-    Mixed Univariate Gaussian distribution.
-    For multivariate data, this assumes all elements to be i.i.d.
-    """
-    def __init__(self, mu: torch.Tensor, sigma1: torch.Tensor, sigma2: torch.Tensor, pi: float):
-        super(MixedUnivariateGaussian, self).__init__()  # always make sure to include the super-class init call!
-        assert mu.size() == sigma1.size() and sigma1.size() == sigma2.size()
-        self.mu = mu
-        self.sigma1 = sigma1        
-        self.sigma2 = sigma2
-        self.pi = pi
-
-    def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        mix =  torch.distributions.Categorical(torch.Tensor([self.pi,1-self.pi]))
-        comp = torch.distributions.normal.Normal(torch.Tensor([self.mu, self.mu]), torch.Tensor([self.sigma1, self.sigma2]))
-        gmm =  torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
-        return gmm.log_prob(values)
-    
-    def sample(self) -> torch.Tensor:
-        mix =  torch.distributions.Categorical(torch.Tensor([self.pi,1-self.pi]))
-        comp = torch.distributions.normal.Normal(torch.Tensor([self.mu, self.mu]), torch.Tensor([self.sigma1, self.sigma2]))
-        gmm =  torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
-        return gmm.sample() 
     
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
     """

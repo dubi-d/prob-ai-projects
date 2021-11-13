@@ -56,7 +56,7 @@ class Model(object):
         # You might want to play around with those
         NUM_SAMPLES = 5
 
-        self.num_epochs = 1  # number of training epochs
+        self.num_epochs = 2  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
         hidden_layers = (30, 80)  # for each entry, creates a hidden layer with the corresponding number of units
@@ -206,13 +206,17 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
         
-        #mu_w = torch.nn.Parameter(torch.zeros((out_features, in_features)))
-        #sigma_w = torch.nn.Parameter(0.5413*torch.ones((out_features, in_features)))
-        #self.weights_var_posterior = MultivariateDiagonalGaussian(mu_w, sigma_w)
+        self.weights_var_posterior = MultivariateDiagonalGaussian(
+            nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-0.2, 0.2)),
+            nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-5, -4))
+        )
         
-        weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-0.2, 0.2))
-        weight_rho = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-5, -4))
-        self.weights_var_posterior = MultivariateDiagonalGaussian(weight_mu, weight_rho)
+        self.weights_var_posterior = MultivariateDiagonalGaussian(
+            torch.nn.Parameter(torch.randn((out_features, in_features))), 
+            torch.nn.Parameter(torch.zeros((out_features, in_features)))
+        )
+
+
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
         assert any(True for _ in self.weights_var_posterior.parameters()), 'Weight posterior must have parameters'
@@ -220,13 +224,15 @@ class BayesianLayer(nn.Module):
         if self.use_bias:
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
-            bias_mu = nn.Parameter(torch.Tensor(out_features, 1).uniform_(-0.2, 0.2))
-            bias_rho = nn.Parameter(torch.Tensor(out_features, 1).uniform_(-5, -4))
-            self.bias_var_posterior = MultivariateDiagonalGaussian(bias_mu, bias_rho)
-            
-            #mu_b = torch.nn.Parameter(torch.zeros(out_features, 1))
-            #rho_b = torch.nn.Parameter(0.5413* torch.ones(out_features, 1))
-            #self.bias_var_posterior = MultivariateDiagonalGaussian(mu_b, rho_b)
+            self.bias_var_posterior = MultivariateDiagonalGaussian(
+                nn.Parameter(torch.Tensor(out_features, 1).uniform_(-0.2, 0.2)), 
+                nn.Parameter(torch.Tensor(out_features, 1).uniform_(-5, -4))
+            )
+
+            self.bias_var_posterior = MultivariateDiagonalGaussian(
+            torch.nn.Parameter(0.5*torch.randn((out_features, 1))), 
+            torch.nn.Parameter(torch.zeros(out_features, 1))
+            )
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'

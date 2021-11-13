@@ -54,15 +54,13 @@ class Model(object):
     def __init__(self):
         # Hyperparameters and general parameters
         # You might want to play around with those
-        NUM_SAMPLES = 5
-
-        self.num_epochs = 2  # number of training epochs
+        self.num_epochs = 5  # number of training epochs
         self.batch_size = 128  # training batch size
         learning_rate = 1e-3  # training learning rates
-        hidden_layers = (30, 80)  # for each entry, creates a hidden layer with the corresponding number of units
+        hidden_layers = (30, 30)  # for each entry, creates a hidden layer with the corresponding number of units
         use_densenet = False  # set this to True in order to run a DenseNet for comparison
         self.print_interval = 100  # number of batches until updated metrics are displayed during training
-        self.num_samples = NUM_SAMPLES
+
         # Determine network type
         if use_densenet:
             # DenseNet
@@ -121,7 +119,10 @@ class Model(object):
                     
                     # Calculate the loss
                     # We use the negative log likelihood as the loss
-                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - log_prior/num_batches + log_variational_posterior/num_batches
+                    M = num_batches
+                    i =  batch_idx
+                    pi = (2**(M-i))/(2**(M-1))
+                    loss = F.nll_loss(F.log_softmax(output_features, dim=1), batch_y, reduction='sum') - pi*log_prior + pi*log_variational_posterior
                     
                     # Backpropagate to get the gradients
                     loss.backward(retain_graph=True)
@@ -207,15 +208,9 @@ class BayesianLayer(nn.Module):
         #  )
         
         self.weights_var_posterior = MultivariateDiagonalGaussian(
-            nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-0.2, 0.2)),
-            nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-5, -4))
+                nn.Parameter(0.2*torch.randn((out_features, in_features))), 
+                nn.Parameter(torch.randn((out_features, in_features))-5)
         )
-        
-        self.weights_var_posterior = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(torch.randn((out_features, in_features))), 
-            torch.nn.Parameter(torch.zeros((out_features, in_features)))
-        )
-
 
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
@@ -225,13 +220,8 @@ class BayesianLayer(nn.Module):
             # TODO: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
             self.bias_var_posterior = MultivariateDiagonalGaussian(
-                nn.Parameter(torch.Tensor(out_features, 1).uniform_(-0.2, 0.2)), 
-                nn.Parameter(torch.Tensor(out_features, 1).uniform_(-5, -4))
-            )
-
-            self.bias_var_posterior = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(0.5*torch.randn((out_features, 1))), 
-            torch.nn.Parameter(torch.zeros(out_features, 1))
+                nn.Parameter(0.2*torch.randn((out_features, 1))), 
+                nn.Parameter(torch.randn((out_features, 1))-5)
             )
 
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
@@ -256,32 +246,18 @@ class BayesianLayer(nn.Module):
         #  Make sure to check whether `self.use_bias` is True,
         #  and if yes, include the bias as well.
         
-        sample_weights = self.weights_var_posterior.sample()
-        sample_biases = torch.zeros((sample_weights.shape[0], 1))
-        log_prior = self.prior.log_likelihood(sample_weights)
-        log_variational_posterior = self.weights_var_posterior.log_likelihood(sample_weights)
-        
-        if self.use_bias:
-            sample_biases = self.bias_var_posterior.sample()
-            log_prior += self.prior.log_likelihood(sample_biases)
-            log_variational_posterior += self.bias_var_posterior.log_likelihood(sample_biases)
-        """
         weights = self.weights_var_posterior.sample()
         log_prior = self.prior.log_likelihood(weights)
         log_variational_posterior = self.weights_var_posterior.log_likelihood(weights)
         
         if self.use_bias:
-            bias = self.bias_var_posterior.sample()
-            
-            bias_prior_ll = self.prior.log_likelihood(bias)
-            log_prior += bias_prior_ll
-            
-            bias_post_ll = self.bias_var_posterior.log_likelihood(bias)
-            log_variational_posterior += bias_post_ll
+            bias = self.bias_var_posterior.sample() 
+            log_prior += self.prior.log_likelihood(bias)
+            log_variational_posterior += self.bias_var_posterior.log_likelihood(bias)
         else:
             bias = None    
-        """
-        return F.linear(inputs, sample_weights, torch.squeeze(sample_biases)), log_prior, log_variational_posterior
+        
+        return F.linear(inputs, weights, torch.squeeze(bias)), log_prior, log_variational_posterior
 
 
 class BayesNet(nn.Module):

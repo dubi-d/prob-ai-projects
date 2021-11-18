@@ -5,6 +5,11 @@ import logging
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 import matplotlib.pyplot as plt
+import sklearn
+from sklearn.gaussian_process.kernels import *
+from sklearn.gaussian_process import GaussianProcessRegressor as GP
+import scipy
+
 
 EXTENDED_EVALUATION = False
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
@@ -17,13 +22,26 @@ class BO_algo(object):
     def __init__(self):
         """Initializes the algorithm with a parameter configuration. """
 
-        # TODO: enter your code here
+        """# TODO: enter your code here
         self.previous_points = []
         # IMPORTANT: DO NOT REMOVE THOSE ATTRIBUTES AND USE sklearn.gaussian_process.GaussianProcessRegressor instances!
         # Otherwise, the extended evaluation will break.
         self.constraint_model = None  # TODO : GP model for the constraint function
         self.objective_model = None  # TODO : GP model for your acquisition function
-
+        """
+        # TODO: enter your code here
+        self.previous_points = []
+        # IMPORTANT: DO NOT REMOVE THOSE ATTRIBUTES AND USE sklearn.gaussian_process.GaussianProcessRegressor instances!
+        # Otherwise, the extended evaluation will break.
+        # Kernels as given in Task Description:
+        self.constraint_model = GP(kernel = ConstantKernel(3.5)*
+                                            RBF(2,length_scale_bounds = "fixed") + 
+                                            WhiteKernel(0.005, noise_level_bounds="fixed"))
+        self.objective_model  = GP(kernel = ConstantKernel(1.5)*
+                                            RBF(1.5,length_scale_bounds = "fixed") + 
+                                            WhiteKernel(0.01, noise_level_bounds="fixed"))
+        return
+    
     def next_recommendation(self) -> np.ndarray:
         """
         Recommend the next input to sample.
@@ -36,7 +54,12 @@ class BO_algo(object):
 
         # TODO: enter your code here
         # In implementing this function, you may use optimize_acquisition_function() defined below.
+        if self.previous_points:
+            return self.optimize_acquisition_function()
+        else:
+            return np.atleast_2d([3,3]) #we start in the middle of the X-space
 
+    
     def optimize_acquisition_function(self) -> np.ndarray:  # DON'T MODIFY THIS FUNCTION
         """
         Optimizes the acquisition function.
@@ -83,7 +106,17 @@ class BO_algo(object):
         """
 
         # TODO: enter your code here
-        raise NotImplementedError
+
+        mu_f, sig_f = self.objective_model.predict(np.atleast_2d(x), return_std=True)
+        t = min([point[2] for point in self.previous_points])
+        z = (t-mu_f)/sig_f
+        pz = scipy.stats.norm.cdf(z)
+        
+        mu_c, sig_c = self.constraint_model.predict(np.atleast_2d(x), return_std=True)
+        p0 = scipy.stats.norm(mu_c, sig_c).cdf(0) #probability that c is <0
+        
+        return sig_f*(z*pz+scipy.stats.norm.pdf(z))*p0
+    
 
     def add_data_point(self, x: np.ndarray, z: float, c: float):
         """
@@ -101,8 +134,16 @@ class BO_algo(object):
 
         assert x.shape == (1, 2)
         self.previous_points.append([float(x[:, 0]), float(x[:, 1]), float(z), float(c)])
+        
         # TODO: enter your code here
-        raise NotImplementedError
+        
+        X = np.array([[x1,x2] for x1,x2,z,c in self.previous_points])
+        z = np.array([z       for x1,x2,z,c in self.previous_points])
+        c = np.array([c       for x1,x2,z,c in self.previous_points])
+        
+        self.constraint_model.fit(X,c)
+        self.objective_model.fit(X,z)
+        return
 
     def get_solution(self) -> np.ndarray:
         """
@@ -115,8 +156,11 @@ class BO_algo(object):
         """
 
         # TODO: enter your code here
-        raise NotImplementedError
-
+        try:
+            x_opt = min([point for point in self.previous_points if point[3] < -0.01], key = lambda x: x[2])[:2]
+        except:
+            x_opt = min([point for point in self.previous_points], key = lambda x: x[3])[:2] #if none of the observed datapoints has c<0 we take the one with smallest c.
+        return np.atleast_2d(x_opt)
 
 """ 
     Toy problem to check  you code works as expected

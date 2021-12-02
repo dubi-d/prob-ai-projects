@@ -91,7 +91,7 @@ class MLPActorCritic(nn.Module):
         self.pi = MLPCategoricalActor(obs_dim, 4, hidden_sizes, activation)
 
         # Build value function
-        self.v  = MLPCritic(obs_dim, hidden_sizes, activation)
+        self.v = MLPCritic(obs_dim, hidden_sizes, activation)
 
     def step(self, state):
         """
@@ -105,7 +105,13 @@ class MLPActorCritic(nn.Module):
         #    3. The log-probability of the action under the policy output distribution
         # Hint: This function is only called when interacting with the environment. You should use
         # `torch.no_grad` to ensure that it does not interfere with the gradient computation.
-        return 0, 0, 0
+        with torch.no_grad():
+            pi, _ = self.pi.forward(state)
+            sampled_action = pi.sample()  # sample from policy (i.e. from policy-NN output logits)
+            log_prob = pi.log_prob(sampled_action)  # log-prob of sampled action under policy
+            value_function = self.v.forward(state)  # evaluate value function at state
+
+        return sampled_action, value_function, log_prob
 
 
 class VPGBuffer:

@@ -348,7 +348,8 @@ class Agent:
         """
         # TODO3: Implement this function.
         # Currently, this just returns a random action.
-        return np.random.choice([0, 1, 2, 3])
+        a, _, _ = self.ac.step(obs)
+        return a
 
 
 def main():

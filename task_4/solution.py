@@ -110,8 +110,10 @@ class MLPActorCritic(nn.Module):
             sampled_action = pi.sample()  # sample from policy (i.e. from policy-NN output logits)
             log_prob = pi.log_prob(sampled_action)  # log-prob of sampled action under policy
             value_function = self.v.forward(state)  # evaluate value function at state
+            #if sampled_action.dim() is 0:
+            #    sampled_action = sampled_action.item()
 
-        return sampled_action, value_function, log_prob
+        return sampled_action.tolist(), value_function, log_prob
 
 
 class VPGBuffer:
@@ -214,9 +216,9 @@ class Agent:
         #TODO2: Implement this function. 
         #TODO8: Change the update rule to make use of the baseline instead of rewards-to-go.
 
-        obs = data['obs']
-        act = data['act']
-        phi = data['phi']
+        obs = data['obs']  # observation (state)
+        act = data['act']  # action
+        phi = data['phi']  # advantage estimation
         ret = data['ret']
 
         # Before doing any computation, always call.zero_grad on the relevant optimizer
@@ -225,6 +227,12 @@ class Agent:
         #Hint: you need to compute a 'loss' such that its derivative with respect to the policy
         #parameters is the policy gradient. Then call loss.backwards() and pi_optimizer.step()
 
+        # loss should be -E[phi * log pi], minus sign because we maximize E[...] (david)
+        pi, log_prob = self.ac.pi.forward(obs=obs, act=act)
+        loss = log_prob * phi
+        loss = -loss.mean()
+        loss.backward()
+        self.pi_optimizer.step()
         return
 
     def v_update(self, data):
@@ -286,8 +294,10 @@ class Agent:
             ep_returns = []
             for t in range(steps_per_epoch):
                 a, v, logp = self.ac.step(torch.as_tensor(state, dtype=torch.float32))
-
+                print("before", t)
+                print(a)
                 next_state, r, terminal = self.env.transition(a)
+                print("after", t)
                 ep_ret += r
                 ep_len += 1
 

@@ -110,10 +110,10 @@ class MLPActorCritic(nn.Module):
             sampled_action = pi.sample()  # sample from policy (i.e. from policy-NN output logits)
             log_prob = pi.log_prob(sampled_action)  # log-prob of sampled action under policy
             value_function = self.v.forward(state)  # evaluate value function at state
-            #if sampled_action.dim() is 0:
-            #    sampled_action = sampled_action.item()
+            if sampled_action.dim() == 0:  # simulator can't handle 0-dim tensors
+                sampled_action = sampled_action.item()  # convert 0 dim tensor to python number
 
-        return sampled_action.tolist(), value_function, log_prob
+        return sampled_action, value_function, log_prob
 
 
 class VPGBuffer:
@@ -172,7 +172,7 @@ class VPGBuffer:
         #TODO4: currently the return is the total discounted reward for the whole episode. 
         # Replace this by computing the reward-to-go for each timepoint.
         # Hint: use the discount_cumsum function.
-        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[0] * np.ones(self.ptr-self.path_start_idx)
+        self.ret_buf[path_slice] = discount_cumsum(rews[:-1], self.gamma)
 
         self.path_start_idx = self.ptr
 
@@ -294,10 +294,7 @@ class Agent:
             ep_returns = []
             for t in range(steps_per_epoch):
                 a, v, logp = self.ac.step(torch.as_tensor(state, dtype=torch.float32))
-                print("before", t)
-                print(a)
                 next_state, r, terminal = self.env.transition(a)
-                print("after", t)
                 ep_ret += r
                 ep_len += 1
 

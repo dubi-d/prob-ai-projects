@@ -195,7 +195,7 @@ class VPGBuffer:
 class Agent:
     def __init__(self, env):
         self.env = env
-        self.hid = 64  # layer width of networks
+        self.hid = 128  # layer width of networks
         self.l = 2  # layer number of networks
         # initialises an actor critic
         self.ac = MLPActorCritic(hidden_sizes=[self.hid]*self.l)
@@ -203,10 +203,11 @@ class Agent:
         # Learning rates for policy and value function
         pi_lr = 3e-3
         vf_lr = 1e-3
+        decay = 0.0005
 
         # we will use the Adam optimizer to update value function and policy
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
-        self.v_optimizer = Adam(self.ac.v.parameters(), lr=vf_lr)
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr, weight_decay=decay)
+        self.v_optimizer = Adam(self.ac.v.parameters(), lr=vf_lr, weight_decay=decay)
 
     def pi_update(self, data):
         """

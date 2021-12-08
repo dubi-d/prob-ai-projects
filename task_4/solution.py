@@ -105,15 +105,14 @@ class MLPActorCritic(nn.Module):
         #    3. The log-probability of the action under the policy output distribution
         # Hint: This function is only called when interacting with the environment. You should use
         # `torch.no_grad` to ensure that it does not interfere with the gradient computation.
+        state = torch.Tensor(state)
         with torch.no_grad():
             pi, _ = self.pi.forward(state)
             sampled_action = pi.sample()  # sample from policy (i.e. from policy-NN output logits)
             log_prob = pi.log_prob(sampled_action)  # log-prob of sampled action under policy
             value_function = self.v.forward(state)  # evaluate value function at state
-            if sampled_action.dim() == 0:  # simulator can't handle 0-dim tensors
-                sampled_action = sampled_action.item()  # convert 0 dim tensor to python number
 
-        return sampled_action, value_function, log_prob
+        return sampled_action.item(), value_function, log_prob
 
 
 class VPGBuffer:
@@ -241,17 +240,24 @@ class Agent:
         """
         #TODO5: Implement this function
 
-        obs = data['obs']
+        obs = data['obs']  # state
         act = data['act']
         phi = data['phi']
-        ret = data['ret']
+        ret = data['ret']  # rewards-to-go
 
         # Hint: it often works well to do multiple rounds of value function updates per epoch.
         # With the learning rate given, we'd recommend 100. 
         # In each update, compute a loss for the value function, call loss.backwards() and 
         # then v_optimizer.step()
         # Before doing any computation, always call.zero_grad on the relevant optimizer
-        self.v_optimizer.zero_grad()
+
+        for i in range(100):
+            self.v_optimizer.zero_grad()
+            value = self.ac.v.forward(obs)
+            loss = torch.square(value - ret)  # value function approximates future rewards
+            loss = loss.mean()
+            loss.backward()
+            self.v_optimizer.step()
 
         return
 
@@ -273,7 +279,7 @@ class Agent:
         # Number of training steps per epoch
         steps_per_epoch = 3000
         # Number of epochs to train for
-        epochs = 50
+        epochs = 5
         # The longest an episode can go on before cutting it off
         max_ep_len = 300
         # Discount factor for weighting future rewards
@@ -329,7 +335,6 @@ class Agent:
 
             self.pi_update(data)
             self.v_update(data)
-
 
         return True
 

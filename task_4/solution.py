@@ -165,8 +165,8 @@ class VPGBuffer:
         # 16 in the GAE paper (see task description) will be helpful, and so will
         # the discout_cumsum function at the top of this file. 
         
-        # deltas = rews[:-1] + ...
-        # self.phi_buf[path_slice] =
+        deltas = rews[:-1] - vals[:-1] + self.gamma * vals[1:]
+        self.phi_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
 
         #TODO4: currently the return is the total discounted reward for the whole episode. 
         # Replace this by computing the reward-to-go for each timepoint.
